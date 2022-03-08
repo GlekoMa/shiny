@@ -14,8 +14,9 @@ library(dplyr)
 # Shiny----------------------------------
 
 ui <- fluidPage(
-    fileInput("upload", "Require 'xxx.xlsx'"),
-    downloadButton("download", "Download"),
+    uiOutput("tab"), 
+    fileInput("upload", "Require 'xxx.xlsx'"), 
+    downloadButton("download", "Download"), 
     tableOutput("files")
 )
 
@@ -144,6 +145,9 @@ server <- function(input,output,session){
             file.copy(paste0(getwd(),"/score_server.xlsx"), file)
         }
     )
+    output$tab <- renderUI({
+        tags$a(href = "https://github.com/GlekoMa/shiny/blob/main/app.R", "source code")
+    })
 }
 
 shinyApp(ui,server)

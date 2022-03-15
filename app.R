@@ -10,21 +10,57 @@ library(stringr)
 library(openxlsx)
 library(reshape2)
 library(dplyr)
+library(ggplot2)
 
 # Shiny----------------------------------
 
 ui <- fluidPage(
-    uiOutput("tab"), 
-    fileInput("upload", "Require 'xxx.xlsx'"), 
-    downloadButton("download", "Download"), 
-    tableOutput("files")
+    fluidRow(
+        column(3, fileInput("upload", "Require 'xxx.xlsx'"), 
+        downloadButton("download", "Download")),
+        column(5, 
+               sliderInput("course", label = "Course", min = 1, max = 8, value = 1),
+               plotOutput("files"))
+        )
 )
 
 server <- function(input,output,session){
-    output$files <- renderTable({
-        req(input$upload)
+    output$files <- renderPlot({
         
-        # Prepare-------------------------------------------------------
+        # Prepare:使图表支持中文----------------------------------------
+        
+        ## 强制使用R自身的png()设备
+        options(shiny.usecairo = FALSE)
+        
+        ## 解决ShinyApps上没有中文字体的问题
+        font_home <- function(path = '') file.path('~', '.fonts', path)
+        if (Sys.info()[['sysname']] == 'Linux' &&
+            system('locate wqy-zenhei.ttc') != 0 &&
+            !file.exists(font_home('wqy-zenhei.ttc'))) {
+            if (!file.exists('wqy-zenhei.ttc'))
+                curl::curl_download(
+                    'https://github.com/rstudio/shiny-examples/releases/download/v0.10.1/wqy-zenhei.ttc',
+                    'wqy-zenhei.ttc'
+                )
+            dir.create(font_home())
+            file.copy('wqy-zenhei.ttc', font_home())
+            system2('fc-cache', paste('-f', font_home()))
+        }
+        rm(font_home)
+        
+        if (.Platform$OS.type == "windows") {
+            if (!grepl("Chinese", Sys.getlocale())) {
+                warning(
+                    "You probably want Chinese locale on Windows for this app",
+                    "to render correctly. See ",
+                    "https://github.com/rstudio/shiny/issues/1053#issuecomment-167011937"
+                )
+            }
+        }
+        
+        # ----------------------------Main---------------------------- #
+        
+        req(input$upload)
         
         # 读取数据
         score0 <- read_excel(input$upload$datapath)
@@ -136,18 +172,26 @@ server <- function(input,output,session){
         writeData(wb,sheet = '班级挂科率',x = sheet3)
         saveWorkbook(wb, "score_server.xlsx", overwrite = TRUE)
         
-        return(sheet1)
+        # 密度估计
+        sheet1_Long <- melt(sheet1[, c(-3, -ncol(sheet1))],
+                            na.rm = TRUE,
+                            id.vars = c("学号", "姓名"),
+                            variable.name = "科目",
+                            value.name = "分数")
+        cour <- names(sheet1)[c(-1:-3, -ncol(sheet1))][input$course]
+        pic <- sheet1_Long[sheet1_Long$科目 == cour, ] %>% 
+            ggplot(aes(x=`分数`, color=`科目`, fill=`科目`)) + 
+            geom_density(alpha=0.3)
+        return(pic)
         rm(list = ls())
     })
+    
     output$download <- downloadHandler(
         filename = "成绩单(beta).xlsx",
         content = function(file) {
             file.copy(paste0(getwd(),"/score_server.xlsx"), file)
         }
     )
-    output$tab <- renderUI({
-        tags$a(href = "https://github.com/GlekoMa/shiny/blob/main/app.R", "source code")
-    })
 }
 
-shinyApp(ui,server)
+shinyApp(ui, server)
